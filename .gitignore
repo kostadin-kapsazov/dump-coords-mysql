@@ -1,6 +1,7 @@
 *.pyc
 *.pyo
 .DS_Store
+/.idea/
 
 # Virtualenv 
 /bin/
