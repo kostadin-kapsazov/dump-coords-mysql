@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # coding: utf-8
-
 '''
 --db-host = (required) - Default: 127.0.0.1
 --db-database = (required)
@@ -14,14 +13,20 @@
 --batch-size = брой записи за извличане от базата на един пас; Default: 1000
 --progress-on-every = брой обработени записи на които ще се извежда съобщение за прогрес; Default: 100'000
 '''
-
 import argparse
 import sys
 import os
 import MySQLdb
 import csv
-import timeit
+import time
 import re
+
+
+
+# depending on the database and table structure, these constants must be set appropriately.
+COLUMN_INDEX_ID        = 0
+COLUMN_INDEX_TIMESTAMP = 2
+
 
 
 def main():
@@ -104,7 +109,7 @@ def _get_arguments(argv=sys.argv[1:]):
     re_valid_table_name = re.compile('[^a-zA-Z_0-9]')
     args.db_table = re_valid_table_name.sub('', args.db_table)
     _validate_argument(len(args.db_table) > 0,
-                       u"Error: Invalid table name provided")
+                       u"Error: Ivalid table name provided")
 
     _validate_argument(args.max_records >= 0,
                        u"Error: Max records must be > 0")
@@ -166,7 +171,9 @@ def _connect_to_database(args):
     """
     print 'Connecting to database ...',
 
-    db_conn = MySQLdb.connect(args.db_host, args.db_user, args.db_pass, args.db_database)
+    db_conn = MySQLdb.connect(host=args.db_host, port=args.db_port, 
+                              user=args.db_user, passwd=args.db_pass,
+                              db=args.db_database)
 
     db_curr = None
     try:
@@ -193,15 +200,10 @@ def _connect_to_database(args):
     return db_conn
 
 
-ID_COLUMN_INDEX = 0
-TIMESTAMP_COLUMN_INDEX = 4
-
 
 def _dump_coords(args):
     """
     """
-    total_elapsed_time = 0
-    total_records = 0
 
     # Just in case - should not fail
     assert args.max_records >= 0
@@ -213,19 +215,23 @@ def _dump_coords(args):
 
     db_curr = args.db_connection.cursor()
 
-    print ('Processing {} records'.format(args.max_records))
+    print ('Processing {} records'.format(args.max_records if args.max_records else 'all'))
+
     count = 0
     max_id = int(load_progress(args.progress_file))
+    time_current_progress = 0
+    total_elapsed_time = 0
+    total_records = 0
+
     while count < args.max_records or args.max_records <= 0:
-        start = timeit.default_timer()
+        time_start = time.time()
 
         coords = get_coords_batch(db_curr, args.db_table, max_id, args.batch_size)
 
         if not coords:
             break
 
-        max_id, min_id = coords[-1][ID_COLUMN_INDEX]
-
+        max_id = coords[-1][COLUMN_INDEX_ID]
 
         coords_dict = create_coords_dict(coords)
 
@@ -238,18 +244,22 @@ def _dump_coords(args):
         count += records
         total_records += records
 
-        stop = timeit.default_timer()
-        elapsed_time = stop - start
-        total_elapsed_time += elapsed_time
+        time_stop = time.time()
+        time_current_batch = time_stop - time_start
+        time_current_progress += time_current_batch
+        total_elapsed_time += time_current_batch
 
         if count % args.progress_on_every == 0:
             percent = 0
             if args.max_records > 0:
-                percent = 100*float(count)/float(args.max_records)
-                
-            print '\t[ {:.2f}% ] {} records in {:.2f} secs;'.format(percent, total_records, elapsed_time),
+                percent = '{:.2f}%'.format(100*float(count)/float(args.max_records))
+            else:
+                percent = '----'
 
+            print '\t[ {} ] {} records in {:.2f} secs;'.format(percent, total_records, time_current_progress),
             print 'reached {}; max_id {}'.format(coords_date.strftime('%Y-%m-%d'), max_id)
+            
+            time_current_progress = 0
 
 
 
@@ -284,7 +294,7 @@ def create_coords_dict(coords):
     result = {}
 
     for row in coords:
-        row_date = row[TIMESTAMP_COLUMN_INDEX].date()
+        row_date = row[COLUMN_INDEX_TIMESTAMP].date()
         rows_for_date = result.setdefault(row_date, [])
         rows_for_date.append(row)
 
@@ -336,9 +346,10 @@ def write_coords_to_csv(output_dir, coords, coords_date):
     if not os.path.exists(output_dir_csv):
         os.makedirs(output_dir_csv)
 
-    with open(get_coords_filename(output_dir_csv, coords_date), 'a') as test_file:
-        csv_writer = csv.writer(test_file)
+    with open(get_coords_filename(output_dir_csv, coords_date), 'a') as output_file:
+        csv_writer = csv.writer(output_file)
         csv_writer.writerows(coords)
+        output_file.flush()
 
 
 def get_coords_batch(db_curr, table, start_from, limit):
