@@ -224,7 +224,8 @@ def _dump_coords(args):
         if not coords:
             break
 
-        max_id = coords[-1][ID_COLUMN_INDEX]
+        max_id, min_id = coords[-1][ID_COLUMN_INDEX]
+
 
         coords_dict = create_coords_dict(coords)
 
