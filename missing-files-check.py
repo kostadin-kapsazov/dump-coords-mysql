@@ -23,14 +23,15 @@ def main():
     found_files = []
     missing_dates = []
 
-    for single_date in (start_date + timedelta(days=n) for n in range(day_count.days)):
+    for single_date in (start_date + timedelta(days=n) for n in xrange(day_count.days)):
+
+        flag_exist = False
         for path, subdirs, files in os.walk(root):
             for name in files:
                 if fnmatch.fnmatch(name, '%s*' % single_date.isoformat()):
                     found_files.append(os.path.join(path, name))
                     flag_exist = True
-                else:
-                    flag_exist = False
+                    break
 
         if not flag_exist:
             missing_dates.append(single_date)
@@ -39,9 +40,9 @@ def main():
     for el in missing_dates:
         print el
 
-    #print("Found:")
-    #for el in found_files:
-    #    print el
+    print("Found:")
+    for el in found_files:
+        print el
 
     return 0
 
